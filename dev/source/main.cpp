@@ -1,6 +1,6 @@
 // TODO insert includes
 
-using namespace second_party_math;
+//using namespace second_party_math;
 
 int main()
 {
