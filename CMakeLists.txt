@@ -4,12 +4,11 @@ cmake_policy(SET CMP0048 NEW)
 project(SECONDPARTYMATH VERSION 1.0.0 LANGUAGES CXX)
 
 # Options
-option(SECONDPARTYMATH_BuildDev "Build the project in the dev folder. (intended for debugging this project by devs)" OFF)
 option(SECONDPARTYMATH_BuildTests "Build the unit tests." OFF)
 
 # For debugging, print generator, compiler, and options
 message(STATUS "Gen: ${CMAKE_GENERATOR}, CXX: ${CMAKE_CXX_COMPILER_ID}, Mode: ${CMAKE_BUILD_TYPE}")
-message(STATUS "Dev: ${SECONDPARTYMATH_BuildDev}, Tests: ${SECONDPARTYMATH_BuildTests}")
+message(STATUS "Tests: ${SECONDPARTYMATH_BuildTests}")
 
 ##################
 # Checking input #
@@ -68,11 +67,6 @@ assign_source_group("second_party_math" ${SECONDPARTYMATH_SOURCE_LIST})
 #################################
 # Add dev and unit test targets #
 #################################
-
-# Build dev
-if(SECONDPARTYMATH_BuildDev)
-    add_subdirectory(dev)
-endif()
     
 # Build tests
 if(SECONDPARTYMATH_BuildTests)
