@@ -51,7 +51,6 @@ except ImportError:
 # Only prints message if "verbose" is turned on.
 
 def print_if_verbose( msg, opts ):
-
     if( opts.verbose ):
         print( msg )
 
@@ -63,7 +62,10 @@ def mod_for_os(cmd):
     This function will take a cmd string and modify it for the particular operating system.
     """
     if (os.name == 'nt'):
+        cmd = cmd.replace('\\', '/')
+        cmd = cmd.replace('"', r'\"')
         cmd = cmd.replace('tee', 'Tee-Object')
+        cmd = 'powershell "' + cmd + '"'
     # Both config and build targets use the tee command so we can display to the screen
     # and save to a log simultaneously. The log is needed so that the top-level make
     # knows when config/build has happened. If build was successful, log should contain
@@ -84,6 +86,26 @@ def get_write_encoding():
         return 'utf-16'
     else:
         return 'utf-8'
+
+#####################################################################################
+
+def find_generator():
+    if os.name == 'nt':
+        if os.path.exists(r"C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC") \
+            or os.path.exists(r"C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\VC\Tools\MSVC") \
+            or os.path.exists(r"C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Tools\MSVC") \
+            or os.path.exists(r"C:\Program Files (x86)\Microsoft Visual Studio\2019\Test Professional\VC\Tools\MSVC"):
+            return "VS2019"
+        elif os.path.exists(r"C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Tools\MSVC") \
+            or os.path.exists(r"C:\Program Files (x86)\Microsoft Visual Studio\2017\Professional\VC\Tools\MSVC") \
+            or os.path.exists(r"C:\Program Files (x86)\Microsoft Visual Studio\2017\Enterprise\VC\Tools\MSVC") \
+            or os.path.exists(r"C:\Program Files (x86)\Microsoft Visual Studio\2017\Test Professional\VC\Tools\MSVC"):
+            return "VS2017"
+        else:
+            print_color('No valid Visual Studio installation was found automatically.', 'red')
+            return ''
+    else:
+        return 'make'    
 
 #####################################################################################
 
@@ -136,15 +158,22 @@ class MakeOptions:
         self.clear_cache = False
         self.clean = False
         self.copy_make = False
+        # Store cmake cmd, since on some linux installs it is cmake3
+        self.cmake_cmd = "cmake"
+        self.ctest_cmd = "ctest"
 
         # The CMake options are saved to a dictionary so they can be reloaded.
         self.cmake_opts = {
-            "generator": "Visual Studio 15 2017 Win64",
+            "generator": "Visual Studio 15 2017",
+            "architecture": "x64",
             "build-type": "Debug",
             "make-dev": "OFF",
             "make-tests": "OFF" }
+        # Note: this default should never get used due to find_generator()
+        # set defaults there.
         if (os.name == "posix"):
             self.cmake_opts['generator'] = "Unix Makefiles"
+            self.cmake_opts['architecture'] = ""
         self.special_cmake_opts = {}
 
         # Build options
@@ -153,8 +182,12 @@ class MakeOptions:
         self.print_cmd = False
         self.dir_suffix = ""
         if os.name == 'nt':
-            self.shell_executable = 'powershell'
+            self.shell_executable = None
         else:
+            # We actually assume some utilities unique to bash in this build process
+            # However, if the user changes their default shell (or they are using WSL),
+            # then we need to override the shell used for subprocesses with bash.
+            # Note: the user can also override this with a cmd line option
             self.shell_executable = '/bin/bash'
 
         # Options specific to the top-level project
@@ -502,17 +535,19 @@ def parse_options( specialized_options = [] ):
     opts.load()
 
     # Configuration options
-    if args.generator != '':
-        if args.generator == 'VS2015':
-            opts.cmake_opts['generator'] = 'Visual Studio 14 2015 Win64'
-        elif args.generator == 'VS2017':
-            opts.cmake_opts['generator'] = 'Visual Studio 15 2017 Win64'
-        elif args.generator == 'VS2019':
-            opts.cmake_opts['generator'] = 'Visual Studio 16 2019'
-        elif args.generator == 'make':
-            opts.cmake_opts['generator'] = 'Unix Makefiles'
-        elif args.generator == 'codeblocks':
-            opts.cmake_opts['generator'] = 'CodeBlocks - Unix Makefiles'
+    if args.generator == '':
+        args.generator = find_generator()
+    if args.generator == 'VS2015':
+        opts.cmake_opts['generator'] = 'Visual Studio 14 2015'
+    elif args.generator == 'VS2017':
+        opts.cmake_opts['generator'] = 'Visual Studio 15 2017'
+    elif args.generator == 'VS2019':
+        opts.cmake_opts['generator'] = 'Visual Studio 16 2019'
+    elif args.generator == 'make':
+        opts.cmake_opts['generator'] = 'Unix Makefiles'
+    elif args.generator == 'codeblocks':
+        opts.cmake_opts['generator'] = 'CodeBlocks - Unix Makefiles'
+
     if args.release:
         opts.cmake_opts['build-type'] = 'Release'
     if args.make_dev:
@@ -673,13 +708,16 @@ def config( opts, module_dir, specialized_options = [] ):
 
     vflag = ""
     if( opts.verbose ):
-        vflag = " -- VERBOSE=true "
+        vflag = " --verbose "
+
+    cmake_arch_flag = ''
+    if opts.cmake_opts['architecture'] != '':
+        cmake_arch_flag =  '-A"' + opts.cmake_opts['architecture'] + '" '
 
     cmake_flags = " -DCMAKE_BUILD_TYPE=" + opts.cmake_opts["build-type"] + " -j " + str( opts.n_jobs ) + vflag
 
     if module_dir.module_type != ModuleType.ThirdParty:
-        cmake_flags += ' -D' + module_name_caps + '_BuildDev:BOOL='   + opts.cmake_opts["make-dev"]   + \
-                       ' -D' + module_name_caps + '_BuildTests:BOOL=' + opts.cmake_opts["make-tests"]
+        cmake_flags += ' -D' + module_name_caps + '_BuildTests:BOOL=' + opts.cmake_opts["make-tests"]
 
     for special_opt in specialized_options:
         if special_opt.type == SpecializedOptionType.CMakeUserDefinedBool or \
@@ -695,7 +733,7 @@ def config( opts, module_dir, specialized_options = [] ):
                     cmake_flags += ' -D' + special_opt.modules_and_var_map[module_dir.name] + ':BOOL=OFF'
 
     print_color( "Configuring module: " + module_dir.name, "blue" )
-    cmd = mod_for_os( 'cmake -G"' + opts.cmake_opts['generator'] + '" ' + 
+    cmd = mod_for_os( opts.cmake_cmd + ' -G"' + opts.cmake_opts['generator'] + '" ' + cmake_arch_flag +  
                       '-DCMAKE_INSTALL_PREFIX:PATH="' + module_dir.install_dir + '" ' + 
                       cmake_flags + ' "' + module_dir.module_dir + '" ' + log )
 
@@ -739,9 +777,9 @@ def build( opts, module_dir ):
 
     vflag = ""
     if( opts.verbose ):
-        vflag = " -- VERBOSE=true "
+        vflag = " --verbose "
 
-    cmd = mod_for_os( 'cmake --build . --target install -j ' + str( opts.n_jobs ) + vflag + log )
+    cmd = mod_for_os( opts.cmake_cmd + ' --build . --target install -j ' + str( opts.n_jobs ) + vflag + log )
 
     if( opts.print_cmd ):
         print_color( cmd, "cyan" )
@@ -766,7 +804,7 @@ def test(opts, selected_modules_dirs):
         os.chdir(module_dir.build_dir)
 
         print_color("Testing----------------" + module_dir.name, "blue")
-        cmd = mod_for_os('ctest ' + vflag + ' -C ' + opts.cmake_opts["build-type"] + ' -j ' + str(opts.n_jobs))
+        cmd = mod_for_os( opts.ctest_cmd + ' ' + vflag + ' -C ' + opts.cmake_opts["build-type"] + ' -j ' + str(opts.n_jobs))
 
         test_flag = subprocess.call(cmd, shell = True, executable=opts.shell_executable)
 
@@ -830,30 +868,39 @@ def validate_cmake_and_python():
     ##############################################################################
     # Verify cmake is new enough...
 
+    # On some linux installs, the CMake version 3 executable is actually called cmake3, 
+    # so we check for this first. 
+    cmake_cmd = "cmake3"
     try:
-        cmake_output = subprocess.check_output( "cmake --version", shell=True, stderr=subprocess.STDOUT ).decode( "utf-8" )
+        cmake_output = subprocess.check_output( "cmake3 --version", shell=True, stderr=subprocess.STDOUT ).decode( "utf-8" )
     except:
-        print( "\nERROR: cmake command not found.  Please check your path.\n" );
-        sys.exit(1)
+        cmake_cmd = "cmake"
+        try:
+            cmake_output = subprocess.check_output( "cmake --version", shell=True, stderr=subprocess.STDOUT ).decode( "utf-8" )
+        except:
+            print( "\nERROR: cmake command not found.  Please check your path.\n" );
+            sys.exit(1)
 
-    cmake_version_full = re.search( "cmake version \d+\.\d+\.\d", cmake_output )
+    cmake_version_full = re.search( cmake_cmd + " version (\d+\.\d+\.\d+\.?\d?\d?\d?)", cmake_output )
     if( cmake_version_full == None ):
         print( "" )
-        print( "Internal Error: could not find/parse the cmake version in the following string:\n\n", cmake_output )
+        print( "Internal Error: could not find/parse the " + cmake_cmd + " version in the following string:\n\n", cmake_output )
         sys.exit( 1 )
     
-    cmake_version = re.findall( "\d+", cmake_version_full.group(0) )
+    cmake_version = re.findall( "\d+", cmake_version_full.group(1) )
 
-    if( len(cmake_version) != 3 ):
+    if( len(cmake_version) < 3 ):
         print( "" )
-        print( "Internal Error: could not parse cmake version (looking for 3 numbers).  Found: ", cmake_version, "\n" )
+        print( "Internal Error: could not parse " + cmake_cmd + " version (looking for at least 3 numbers).  Found: ", cmake_version, "\n" )
         sys.exit( 1 )
 
     # FIXME: What is the actual minimum version of cmake that we need?
     if( ( int(cmake_version[0]) < 3 ) or ( int(cmake_version[1]) < 12 ) ):
         print( "" )
-        print( "ERROR: Cmake is too old (Found " + cmake_version_full.group(0) + ").\n" )
+        print( "ERROR: CMake is too old (Found " + cmake_version_full.group(0) + ").\n" )
         sys.exit( 1 )
+
+    return cmake_cmd
 
 
 #####################################################################################
@@ -863,9 +910,12 @@ def make( specialized_opts, build_order=[] ):
     be needed by the particular module(s).  If build_order is provided, then the modules
     will be sorted by that order for all operations."""
 
-    validate_cmake_and_python()
+    cmake_cmd = validate_cmake_and_python()
 
     opts, module_info = parse_options( specialized_opts )
+    if (cmake_cmd == "cmake3"):
+      opts.cmake_cmd = "cmake3"
+      opts.ctest_cmd = "ctest3"
 
     selected_modules = opts.get_selected_module_dirs( module_info )
 
