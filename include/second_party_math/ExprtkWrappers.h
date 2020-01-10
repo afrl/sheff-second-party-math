@@ -30,4 +30,8 @@ namespace second_party_math
         std::unique_ptr<exprtk::expression<double>> expression_;
         std::unique_ptr<exprtk::symbol_table<double>> symbol_table_;
     };
+
+	/// Parses a string that represents a scalar function (with no variables) and
+	/// returns the answer.
+	double parse_math_string(const std::string expr_str);
 }

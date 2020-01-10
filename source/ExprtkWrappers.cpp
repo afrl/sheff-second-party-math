@@ -71,4 +71,14 @@ namespace second_party_math
     {
         return expression_->value();
     }
+
+	double parse_math_string(const std::string expr_str)
+	{
+		// Evaluate the expression
+		exprtk::expression<double> expr;
+		exprtk::parser<double> expr_parser;
+		expr_parser.compile(expr_str, expr);
+		double result = expr.value();
+		return result;
+	}
 }

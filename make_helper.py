@@ -823,7 +823,7 @@ def copy_make(opts, selected_modules_dirs):
 
 #####################################################################################
 
-def Config_BSAMXX_Version_H( mod_dir ):
+def Config_BSAMXX_Version_H( mod_info, shell_executable ):
 
     top_dir = os.getcwd()
 
@@ -831,23 +831,38 @@ def Config_BSAMXX_Version_H( mod_dir ):
         header_str = header_template.read()
    
     # Warn not to modify updated .h file 
-    header_str = header_str.replace( '${OVERWRITE_WARNING}', "DO NOT MODIFY. Automatically configured from bsamxx_version.h.in" )
+    header_str = header_str.replace( '${OVERWRITE_WARNING}', 
+      "DO NOT MODIFY. Automatically configured from bsamxx_version.h.in" )
 
-    # Get top-level version and hash
+    # Get top-level version from CMake
     with (open("CMakeLists.txt")) as cmake:
         cmake_str = cmake.read()
 
     version = re.search('BSAMXX VERSION (.*) LANGUAGES', cmake_str).group(1)
     header_str = header_str.replace('${BSAMXX_VERSION}', version)
 
-    proc = subprocess.Popen( ['git', 'log', "--pretty=format:'%h'", '-1'], 
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE )
-    bsamxx_hash, _ = proc.communicate()
+    # Get module hashes
+    hash_str = "{\n"
+    for i, mods in enumerate([{mod_info.root_module_name : mod_info.root_module_dir}, 
+      mod_info.first_party_submodules, mod_info.second_party_submodules, mod_info.third_party_submodules]): 
+        for k in mods:  
+            os.chdir( mods[k] )
 
-    bsamxx_hash = bsamxx_hash.decode( 'ascii' ).replace("'","") 
-    header_str = header_str.replace( '${BSAMXX_HASH}', bsamxx_hash )
+            # Popen/check_output doesn't seem to like set -o pipefail; 
+            #cmd = mod_for_os( "git log --pretty=format:'%h' -1" )
+            cmd = "git log --pretty=format:'%h' -1" 
 
-    # FIXME: do module stuff here...
+            mod_hash = subprocess.check_output(cmd.split())
+            mod_hash = mod_hash.decode( 'ascii' ).replace("'","") 
+            hash_str += '      {%i, "%s", "%s"},\n' % (i, k, mod_hash)
+
+    os.chdir( mod_info.root_module_dir )
+    hash_str += "    }"
+    header_str = header_str.replace( '${BSAMXX_MODULE_INFO}', hash_str )
+
+    # Get build (or config) time (assumes using make_helper to build...) 
+    timestamp = datetime.datetime.now()
+    header_str = header_str.replace('${BSAMXX_TIMESTAMP}', timestamp.strftime("%m/%d/%Y %H:%M:%S"))
 
     # Finally write the full string to the header file
     with open(os.path.join(top_dir, "include", "bsamxx_version.h"), 'w') as header_file:
@@ -930,7 +945,7 @@ def make( specialized_opts, build_order=[] ):
 
     if ( opts.root_module_type == ModuleType.TopLevel ) and ( opts.config or opts.build or opts.doc ):
         # First update the bsamxx_version.h header
-        Config_BSAMXX_Version_H( opts.root_build_dir )
+        Config_BSAMXX_Version_H( module_info, opts.shell_executable )
 
     if opts.config:
 
