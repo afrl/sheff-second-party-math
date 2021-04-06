@@ -3,25 +3,6 @@ cmake_minimum_required(VERSION 3.8)
 cmake_policy(SET CMP0048 NEW)
 project(SECONDPARTYMATH VERSION 1.0.0 LANGUAGES CXX)
 
-# Set package toolchain location for Linux. To enable efficient switching between
-# toolchains for cross-compiling, we modify the location where CMake looks for 
-# packages using the find_package command by symbolically linking the default location,
-# $HOME/.cmake/packages, to a similar location with the folder name given by the 
-# compiler family. 
-if (UNIX)
-    execute_process(COMMAND "mkdir" "-p" "$ENV{HOME}/.cmake/${CMAKE_CXX_COMPILER_ID}"
-      RESULT_VARIABLE toolchain_res OUTPUT_VARIABLE toolchain_out)
-    if (toolchain_res)
-        message(ERROR "Couldn't create toolchain dir: $ENV{HOME}/.cmake/${CMAKE_CXX_COMPILER_ID} ${toolchain_out}")
-    endif ()
-    execute_process(COMMAND "ln" "-sfn" "$ENV{HOME}/.cmake/${CMAKE_CXX_COMPILER_ID}" "$ENV{HOME}/.cmake/packages"
-      RESULT_VARIABLE toolchain_res OUTPUT_VARIABLE toolchain_out)
-    if (toolchain_res)
-        message(ERROR "Couldn't create toolchain link: $ENV{HOME}/.cmake/packages ${toolchain_out}")
-    endif ()
-endif()
-
-
 # Options
 option(SECONDPARTYMATH_BuildTests "Build the unit tests." OFF)
 
@@ -30,13 +11,13 @@ message(STATUS "Gen: ${CMAKE_GENERATOR}, CXX: ${CMAKE_CXX_COMPILER_ID}, Mode: ${
 message(STATUS "Tests: ${SECONDPARTYMATH_BuildTests}")
 
 # Add cmake dir to module path
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
 ##################
 # Checking input #
 ##################
 
-include(${CMAKE_SOURCE_DIR}/cmake/CommonInputChecks.cmake)
+include(${PROJECT_SOURCE_DIR}/cmake/CommonInputChecks.cmake)
 
 ########################
 # Declare dependencies #
@@ -50,8 +31,8 @@ include(${CMAKE_SOURCE_DIR}/cmake/CommonInputChecks.cmake)
 ################################
 
 # Set the variables for SECONDPARTYMATH
-set(SECONDPARTYMATH_INCLUDE ${CMAKE_SOURCE_DIR}/include)
-set(SECONDPARTYMATH_SRC ${CMAKE_SOURCE_DIR}/source)
+set(SECONDPARTYMATH_INCLUDE ${PROJECT_SOURCE_DIR}/include)
+set(SECONDPARTYMATH_SRC ${PROJECT_SOURCE_DIR}/source)
 file (GLOB_RECURSE SECONDPARTYMATH_HEADER_LIST "${SECONDPARTYMATH_INCLUDE}/*.h")
 file (GLOB_RECURSE SECONDPARTYMATH_SOURCE_LIST "${SECONDPARTYMATH_SRC}/*.h" "${SECONDPARTYMATH_SRC}/*.cpp")
     
@@ -71,6 +52,7 @@ target_sources(secondpartymath PRIVATE ${SECONDPARTYMATH_SOURCE_LIST})
 add_library(SecondPartyMath::SecondPartyMath ALIAS secondpartymath)
 # Add C++ 14 flag
 target_compile_features(secondpartymath PUBLIC cxx_std_14)
+set_target_properties(secondpartymath PROPERTIES FOLDER "sheff")
 # Link dependencies
 
 # Modify the properties for one source in particular due to the source file requiring too
@@ -79,11 +61,13 @@ if (MSVC)
     set_source_files_properties(${SECONDPARTYMATH_SRC}/ExprtkWrappers.cpp PROPERTIES COMPILE_FLAGS /bigobj)
 endif()
 
-# Assign source groups
-include(${CMAKE_SOURCE_DIR}/cmake/Utilities.cmake)
-assign_source_group("second_party_math" ${SECONDPARTYMATH_HEADER_LIST})
-assign_source_group("second_party_math" ${SECONDPARTYMATH_SOURCE_LIST})
+###########################
+# Assigning source groups #
+###########################
 
+include("$ENV{SHEFF_TOOLS}/cmake/IncludeSHEFF.cmake")
+register_sources_sheff("second_party_math" "${SECONDPARTYMATH_HEADER_LIST}" "${SECONDPARTYMATH_SOURCE_LIST}")
+assign_source_groups_sheff()
 
 #################################
 # Add unit test targets #
@@ -149,6 +133,3 @@ export(
     FILE ${CMAKE_CURRENT_BINARY_DIR}/SecondPartyMathTargets.cmake
     NAMESPACE SecondPartyMath::
 )
-
-# Register package in user's package registry
-export(PACKAGE SecondPartyMath)
