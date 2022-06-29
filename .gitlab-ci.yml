@@ -1,0 +1,19 @@
+include:
+  - project: 'sheff/sheff_gitlab_ci'
+    ref: main
+    file: 'setup_build.yml'
+  - project: 'sheff/sheff_gitlab_ci'
+    ref: main
+    file: 'setup_doxygen.yml'
+
+stages:
+  - build
+  - deploy
+
+build:
+  stage: build
+
+  script:
+    - python3 make.py --config --build --verbose --make-tests --test
+    - python3 make.py --config --build --verbose --make-tests --mode=RelWithDebInfo
+
