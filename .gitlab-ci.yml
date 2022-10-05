@@ -1,19 +1,21 @@
 include:
-  - project: 'sheff/sheff_gitlab_ci'
+  - project: 'rxcc_computation/sheff/devops/sheff_gitlab_ci'
     ref: main
-    file: 'setup_build.yml'
-  - project: 'sheff/sheff_gitlab_ci'
-    ref: main
-    file: 'setup_doxygen.yml'
+    file: 'setup_build.yml' 
 
 stages:
   - build
-  - deploy
 
-build:
+build_ubuntu_22:
   stage: build
-
+  extends: .build_ubuntu_22
   script:
-    - python3 make.py --config --build --verbose --make-tests --test
+    - python3 make.py --config --build --verbose --make-tests --mode=Debug
     - python3 make.py --config --build --verbose --make-tests --mode=RelWithDebInfo
 
+build_centos_7:
+  stage: build
+  extends: .build_centos_7
+  script:
+    - python3 make.py --config --build --verbose --make-tests --mode=Debug
+    - python3 make.py --config --build --verbose --make-tests --mode=RelWithDebInfo
